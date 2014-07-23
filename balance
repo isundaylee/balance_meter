@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+
+require 'bundler/setup'
+require 'mechanize'
+
+@cache = {}
+@accounts = {}
+
+QUJING_LOGIN_URL = 'https://getqujing.com/en/login'
+
+def update_qujing
+  qujing_account = @accounts['qujing']
+
+  unless qujing_account
+    puts 'No account set for qujing. '
+    return
+  end
+
+  username = qujing_account['username']
+  password = qujing_account['password']
+
+  puts username
+  puts password
+
+  agent = Mechanize.new
+  login_page = agent.get QUJING_LOGIN_URL
+
+  new_page = login_page.form_with(action: '/en/login') do |f|
+    f.email = username
+    f.password = password
+  end.click_button
+
+  new_page.search('.property-list').each do |p|
+    next unless p.at_css('.key').text.strip == 'Transfer'
+    @cache['qujing'] = {
+      value: p.at_css('.value').text.strip,
+      time: DateTime.now
+    }
+    break
+  end
+end
+
+def main
+  unless ARGV.size == 2
+    puts 'Usage: balance read/update name'
+    exit
+  end
+
+  cache_file = File.join(File.dirname(__FILE__), 'cache.yml')
+  accounts_file = File.join(File.dirname(__FILE__), 'accounts.yml')
+  @cache = YAML.load(File.read(cache_file)) rescue {}
+  @accounts = YAML.load(File.read(accounts_file)) rescue {}
+
+  action = ARGV[0]
+  name = ARGV[1]
+
+  if action.strip == 'read'
+    balance = @cache[name]
+
+    if balance
+      puts balance[:value]
+      puts balance[:time]
+    else
+      puts 'Unavailable'
+    end
+  elsif action.strip == 'update'
+    if name.strip == 'qujing'
+      update_qujing
+    end
+
+    File.write(cache_file, @cache.to_yaml)
+  end
+end
+
+main
+
